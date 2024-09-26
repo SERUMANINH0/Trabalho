@@ -1,9 +1,12 @@
-import React, { useState, ChangeEvent, FormEvent } from 'react'
-import { Button } from './componentes/ui/button'
-import { Input } from './componentes/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from './componentes/ui/card'
-import { Label } from './componentes/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './componentes/ui/tabs'
+import { useState, useEffect, ChangeEvent, FormEvent } from 'react'
+import { getAuth, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { Button } from "./componentes/ui/button"
+import { Input } from "./componentes/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "./componentes/ui/card"
+import { Label } from "./componentes/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./componentes/ui/tabs"
+import { FirebaseInit } from './firebase/FirebaseInit'
+import { Login } from './componentes/Login'
 
 interface Transacao {
   id: number
@@ -12,13 +15,32 @@ interface Transacao {
   tipo: 'receita' | 'despesa'
 }
 
-const App: React.FC = () => {
+const App = () => {
   const [transacoes, setTransacoes] = useState<Transacao[]>([])
   const [descricao, setDescricao] = useState('')
   const [valor, setValor] = useState('')
-  const [tipo, setTipo] = useState<'receita' | 'despesa'>('receita')
+  const [usuario, setUsuario] = useState<User | null>(null)
+  const [carregando, setCarregando] = useState(true)
+  const [mensagem, setMensagem] = useState('')
+  const [mostrarLogin, setMostrarLogin] = useState(true)
 
-  const adicionarTransacao = (e: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (usuarioAtual) => {
+      setUsuario(usuarioAtual);
+      setCarregando(false);
+      if (usuarioAtual) {
+        setMensagem(`Login bem-sucedido: ${usuarioAtual.email}`);
+        setMostrarLogin(false);
+      } else {
+        setMensagem('');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const adicionarTransacao = (e: FormEvent<HTMLFormElement>, tipo: 'receita' | 'despesa') => {
     e.preventDefault()
     if (descricao && valor) {
       const novaTransacao: Transacao = {
@@ -44,10 +66,29 @@ const App: React.FC = () => {
   const handleDescricaoChange = (e: ChangeEvent<HTMLInputElement>) => setDescricao(e.target.value)
   const handleValorChange = (e: ChangeEvent<HTMLInputElement>) => setValor(e.target.value)
 
-  return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-8 text-center">Gerenciador de Orçamento Pessoal</h1>
-      
+  const handleLogout = async () => {
+    const auth = getAuth();
+    try {
+      await signOut(auth);
+      setMensagem('Logout realizado com sucesso');
+      setMostrarLogin(true);
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      setMensagem('Erro ao fazer logout');
+    }
+  }
+
+  const handleEntrarSemLogin = () => {
+    setMostrarLogin(false);
+    setMensagem('Você entrou sem fazer login');
+  }
+
+  if (carregando) {
+    return <div className="flex justify-center items-center h-screen">Carregando...</div>;
+  }
+
+  const conteudoPrincipal = (
+    <>
       <Tabs defaultValue="visao-geral" className="mb-8">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
@@ -73,7 +114,7 @@ const App: React.FC = () => {
               <CardTitle>Adicionar Receita</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={(e) => { e.preventDefault(); setTipo('receita'); adicionarTransacao(e); }} className="space-y-4">
+              <form onSubmit={(e) => adicionarTransacao(e, 'receita')} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="receita-descricao">Descrição</Label>
                   <Input
@@ -105,7 +146,7 @@ const App: React.FC = () => {
               <CardTitle>Adicionar Despesa</CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={(e) => { e.preventDefault(); setTipo('despesa'); adicionarTransacao(e); }} className="space-y-4">
+              <form onSubmit={(e) => adicionarTransacao(e, 'despesa')} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="despesa-descricao">Descrição</Label>
                   <Input
@@ -143,13 +184,64 @@ const App: React.FC = () => {
               <li key={transacao.id} className="flex justify-between items-center p-2 bg-gray-100 rounded">
                 <span>{transacao.descricao}</span>
                 <span className={transacao.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}>
-                  R$ {transacao.valor.toFixed(2)}
+                  {transacao.tipo === 'receita' ? '+' : '-'} R$ {transacao.valor.toFixed(2)}
                 </span>
               </li>
             ))}
           </ul>
         </CardContent>
       </Card>
+    </>
+  )
+
+  return (
+    <div className="container mx-auto p-4 max-w-4xl">
+      <h1 className="text-3xl font-bold mb-8 text-center">Gerenciador de Orçamento Pessoal</h1>
+      
+      <FirebaseInit />
+      
+      {mensagem && (
+        <div className="mb-4 p-2 bg-green-100 text-green-700 rounded">
+          {mensagem}
+        </div>
+      )}
+
+      <div className="mb-4 flex justify-between items-center">
+        {usuario ? (
+          <>
+            <p className="text-gray-600">Usuário: <span className="font-semibold">{usuario.email}</span></p>
+            <Button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white">
+              Logout
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-gray-600">Usuário: <span className="font-semibold">Não logado</span></p>
+            <Button onClick={() => setMostrarLogin(true)} className="bg-blue-500 hover:bg-blue-600 text-white">
+              Login
+            </Button>
+          </>
+        )}
+      </div>
+
+      {mostrarLogin ? (
+        <Card className="w-full max-w-md mx-auto mt-8">
+          <CardHeader>
+            <CardTitle className="text-2xl font-bold">Login</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Login />
+            <Button
+              onClick={handleEntrarSemLogin}
+              className="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white"
+            >
+              Entrar sem fazer login
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        conteudoPrincipal
+      )}
     </div>
   )
 }
